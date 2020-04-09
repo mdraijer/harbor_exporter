@@ -45,6 +45,15 @@ const (
 )
 
 var (
+	processScan,
+	processStatistics,
+	processQuotas,
+	processSystemVolumes,
+	processRepositories,
+	processReplications bool
+)
+
+var (
 	up,
 	scanTotalCount,
 	scanCompletedCount,
@@ -69,6 +78,15 @@ func (l promHTTPLogger) Println(v ...interface{}) {
 	level.Error(l.logger).Log("msg", fmt.Sprint(v...))
 }
 
+func contains(a []string, x string) bool {
+	for _, n := range a {
+		if x == n {
+			return true
+		}
+	}
+	return false
+}
+
 // Exporter collects Consul stats from the given server and exports them using
 // the prometheus metrics package.
 type Exporter struct {
@@ -78,12 +96,13 @@ type Exporter struct {
 }
 
 type harborOpts struct {
-	instance string
-	uri      string
-	username string
-	password string
-	timeout  time.Duration
-	insecure bool
+	instance    string
+	uri         string
+	username    string
+	password    string
+	timeout     time.Duration
+	insecure    bool
+	skipmetrics string
 }
 
 type HarborClient struct {
@@ -237,30 +256,55 @@ func NewExporter(opts harborOpts, logger log.Logger) (*Exporter, error) {
 // implements prometheus.Collector.
 func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- up
-	ch <- scanTotalCount
-	ch <- scanCompletedCount
-	ch <- scanRequesterCount
-	ch <- projectCount
-	ch <- repoCount
-	ch <- quotasCount
-	ch <- quotasSize
-	ch <- systemVolumes
-	ch <- repositoriesPullCount
-	ch <- repositoriesStarCount
-	ch <- repositoriesTagsCount
-	ch <- replicationStatus
-	ch <- replicationTasks
+	if processScan {
+		ch <- scanTotalCount
+		ch <- scanCompletedCount
+		ch <- scanRequesterCount
+	}
+	if processStatistics {
+		ch <- projectCount
+		ch <- repoCount
+	}
+	if processQuotas {
+		ch <- quotasCount
+		ch <- quotasSize
+	}
+	if processSystemVolumes {
+		ch <- systemVolumes
+	}
+	if processRepositories {
+		ch <- repositoriesPullCount
+		ch <- repositoriesStarCount
+		ch <- repositoriesTagsCount
+	}
+	if processReplications {
+		ch <- replicationStatus
+		ch <- replicationTasks
+	}
 }
 
 // Collect fetches the stats from configured Consul location and delivers them
 // as Prometheus metrics. It implements prometheus.Collector.
 func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
-	ok := e.collectScanMetric(ch)
-	ok = e.collectStatisticsMetric(ch) && ok
-	ok = e.collectQuotasMetric(ch) && ok
-	ok = e.collectSystemVolumesMetric(ch) && ok
-	ok = e.collectRepositoriesMetric(ch) && ok
-	ok = e.collectReplicationsMetric(ch) && ok
+	ok := true
+	if processScan {
+		ok = e.collectScanMetric(ch) && ok
+	}
+	if processStatistics {
+		ok = e.collectStatisticsMetric(ch) && ok
+	}
+	if processQuotas {
+		ok = e.collectQuotasMetric(ch) && ok
+	}
+	if processSystemVolumes {
+		ok = e.collectSystemVolumesMetric(ch) && ok
+	}
+	if processRepositories {
+		ok = e.collectRepositoriesMetric(ch) && ok
+	}
+	if processReplications {
+		ok = e.collectReplicationsMetric(ch) && ok
+	}
 
 	if ok {
 		ch <- prometheus.MustNewConstMetric(
@@ -290,15 +334,25 @@ func main() {
 	kingpin.Flag("harbor.password", "password").Envar("HARBOR_PASSWORD").Default("password").StringVar(&opts.password)
 	kingpin.Flag("harbor.timeout", "Timeout on HTTP requests to the harbor API.").Default("500ms").DurationVar(&opts.timeout)
 	kingpin.Flag("harbor.insecure", "Disable TLS host verification.").Default("false").BoolVar(&opts.insecure)
+	kingpin.Flag("harbor.skipmetrics", "Skip one or more metrics: comma separated list of collectors, collector names are: scan, statistics, quotas, systemvolumes, repositories, replications (Warning: skipping all collectors makes the remaining 'up' metric meaningless)").Envar("HARBOR_SKIPMETRICS").Default("").StringVar(&opts.skipmetrics)
 
 	promlogConfig := &promlog.Config{}
 	flag.AddFlags(kingpin.CommandLine, promlogConfig)
 	kingpin.HelpFlag.Short('h')
 	kingpin.Parse()
 	logger := promlog.New(promlogConfig)
+	skips := strings.Split(opts.skipmetrics, ",")
+	processScan = !contains(skips, "scan")
+	processStatistics = !contains(skips, "statistics")
+	processQuotas = !contains(skips, "quotas")
+	processSystemVolumes = !contains(skips, "systemvolumes")
+	processRepositories = !contains(skips, "repositories")
+	processReplications = !contains(skips, "replications")
 
-	level.Info(logger).Log("msg", "Starting harbor_exporter", "version", version.Info())
+	level.Info(logger).Log("msg", "Starting harbor_exporter", "version", version.Info(), "harbor instance", opts.instance)
 	level.Info(logger).Log("build_context", version.BuildContext())
+	level.Info(logger).Log("msg", "Connection information", "harbor server uri", opts.uri, "username", opts.username, "timeout", opts.timeout, "insecure", opts.insecure)
+	level.Info(logger).Log("msg", "Activating the following collectors:", "up", true, "Scan", processScan, "Statistics", processStatistics, "Quotas", processQuotas, "SystemVolumes", processSystemVolumes, "Repositories", processRepositories, "Replications", processReplications)
 
 	exporter, err := NewExporter(opts, logger)
 	if err != nil {
