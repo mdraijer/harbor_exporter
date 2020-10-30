@@ -32,38 +32,40 @@ func (e *Exporter) collectReplicationsMetric(ch chan<- prometheus.Metric) bool {
 	}
 
 	for i := range policiesData {
-		policyId := strconv.FormatFloat(policiesData[i].Id, 'f', 0, 32)
-		policyName := policiesData[i].Name
+		if (policiesData[i].enabled == "true" && policiesData[i].trigger.type == "scheduled") {
+			policyId := strconv.FormatFloat(policiesData[i].Id, 'f', 0, 32)
+			policyName := policiesData[i].Name
 
-		body := e.client.request("/api/replication/executions?policy_id=" + policyId + "&page=1&page_size=1")
-		var data policyMetric
+			body := e.client.request("/api/replication/executions?policy_id=" + policyId + "&page=1&page_size=1")
+			var data policyMetric
 
-		if err := json.Unmarshal(body, &data); err != nil {
-			level.Error(e.logger).Log("msg", "Error retrieving replication data for policy "+policyId, "err", err.Error())
-			return false
-		}
-
-		for i := range data {
-			var replStatus float64
-			replStatus = 0
-			if data[i].Status == "Succeed" {
-				replStatus = 1
+			if err := json.Unmarshal(body, &data); err != nil {
+				level.Error(e.logger).Log("msg", "Error retrieving replication data for policy "+policyId, "err", err.Error())
+				return false
 			}
-			ch <- prometheus.MustNewConstMetric(
-				replicationStatus, prometheus.GaugeValue, replStatus, policyName,
-			)
-			ch <- prometheus.MustNewConstMetric(
-				replicationTasks, prometheus.GaugeValue, data[i].Failed, policyName, "failed",
-			)
-			ch <- prometheus.MustNewConstMetric(
-				replicationTasks, prometheus.GaugeValue, data[i].Succeed, policyName, "succeed",
-			)
-			ch <- prometheus.MustNewConstMetric(
-				replicationTasks, prometheus.GaugeValue, data[i].In_progress, policyName, "in_progress",
-			)
-			ch <- prometheus.MustNewConstMetric(
-				replicationTasks, prometheus.GaugeValue, data[i].Stopped, policyName, "stopped",
-			)
+
+			for i := range data {
+				var replStatus float64
+				replStatus = 0
+				if data[i].Status == "Succeed" {
+					replStatus = 1
+				}
+				ch <- prometheus.MustNewConstMetric(
+					replicationStatus, prometheus.GaugeValue, replStatus, policyName,
+				)
+				ch <- prometheus.MustNewConstMetric(
+					replicationTasks, prometheus.GaugeValue, data[i].Failed, policyName, "failed",
+				)
+				ch <- prometheus.MustNewConstMetric(
+					replicationTasks, prometheus.GaugeValue, data[i].Succeed, policyName, "succeed",
+				)
+				ch <- prometheus.MustNewConstMetric(
+					replicationTasks, prometheus.GaugeValue, data[i].In_progress, policyName, "in_progress",
+				)
+				ch <- prometheus.MustNewConstMetric(
+					replicationTasks, prometheus.GaugeValue, data[i].Stopped, policyName, "stopped",
+				)
+			}
 		}
 	}
 	return true
