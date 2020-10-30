@@ -10,8 +10,12 @@ import (
 
 func (e *Exporter) collectReplicationsMetric(ch chan<- prometheus.Metric) bool {
 	type policiesMetrics []struct {
-		Id   float64
-		Name string
+		Id      float64
+		Name    string
+                Enabled bool
+                Trigger struct {
+                        Type string
+               }
 		// Extra fields omitted for maintainability: not relevant for current metrics
 	}
 	type policyMetric []struct {
@@ -32,7 +36,7 @@ func (e *Exporter) collectReplicationsMetric(ch chan<- prometheus.Metric) bool {
 	}
 
 	for i := range policiesData {
-		if (policiesData[i].enabled == "true" && policiesData[i].trigger.type == "scheduled") {
+		if (policiesData[i].Enabled == true && policiesData[i].Trigger.Type == "scheduled") {
 			policyId := strconv.FormatFloat(policiesData[i].Id, 'f', 0, 32)
 			policyName := policiesData[i].Name
 
