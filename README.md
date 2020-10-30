@@ -52,7 +52,17 @@ HARBOR_INSTANCE
 HARBOR_URI
 HARBOR_USERNAME
 HARBOR_PASSWORD
+HARBOR_SKIPMETRICS
 ```
+
+### Performance
+Since this solution does not expose metrics from _inside_ Harbor, but instead uses existing API calls over http to the monitored Harbor instance, the metrics come with a performance penalty.
+
+Especially the harbor_repositories metrics group increase the resource usage of Harbor.
+
+To handle this, there is an option to skip some of the metrics: specify a comma separated list of collectors. Collector names are: scan, statistics, quotas, systemvolumes, repositories, replications. Each collector gathers one or more metrics, recognizable by the name.
+
+Warning: skipping all collectors makes the remaining 'up' metric meaningless, since that metric merely states whether all other metrics could be retrieved. When you need to know the general status of your Harbor instance it is better to use its health check: `https://<harbor-server>/api/ping` and `https://<harbor-server>/api/health`.
 
 ## Using Docker
 
